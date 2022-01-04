@@ -13,6 +13,6 @@
     "google"
   ],
   "rules": {
-
+    "max-len": "off"
   }
 }
