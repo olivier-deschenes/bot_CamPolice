@@ -1,11 +1,5 @@
-import * as fs from 'fs';
-
-process.title = 'BOTDISCORD';
-
 require('dotenv').config();
-import {Client, Intents, VoiceState} from 'discord.js';
-
-const channelIds: String[] = [];
+import {CategoryChannel, Client, Collection, Guild, Intents, VoiceState} from 'discord.js';
 
 const client = new Client(
     {intents: [Intents.FLAGS.GUILDS,
@@ -15,26 +9,18 @@ const client = new Client(
       Intents.FLAGS.GUILD_VOICE_STATES]}
 );
 
-const eventFiles = fs.readdirSync('./events')
-    .filter((file) => file.endsWith('.ts'));
+type CameraChannelsListType = {serverId: string, channelIds: string[]}[]
 
-for (const file of eventFiles) {
-  const event = require(`./events/${file}`);
-  if (event.once) {
-    client.once(event.name, (...args) => event.execute(...args, channelIds));
-  } else {
-    client.on(event.name, (...args) => event.execute(...args, channelIds));
-  }
-}
+const cameraChannelsList: CameraChannelsListType = [];
 
 client.on('voiceStateUpdate', (oldMember: VoiceState, newMember: VoiceState) => {
-  if (oldMember.channelId !== null && channelIds.some((c) => c === oldMember.channelId)) {
-    if (oldMember.channel?.members?.size === 0) {
-      channelIds.splice(channelIds.indexOf(oldMember.channelId), 1);
-      oldMember.channel.setName(oldMember.channel.name.substring('📷 '.length));
-      console.log('reseting name');
-    }
-  } else if (channelIds.some((c) => c === newMember.channelId)) {
+  const userServerId = oldMember.guild.id;
+
+  const camChannels = cameraChannelsList.find((serv) => serv.serverId === userServerId);
+
+  if (!camChannels) return;
+
+  if (camChannels.channelIds.some((c) => c === newMember.channelId)) {
     setTimeout(() => {
       if (newMember.selfVideo) return;
 
@@ -51,9 +37,36 @@ client.on('voiceStateUpdate', (oldMember: VoiceState, newMember: VoiceState) => 
             ],
           }
       );
-    }, 3000);
+    }, 5000);
   }
 }
 );
+
+client.once('ready', (client: Client) => {
+  console.log(`Ready! Logged in as ${client.user?.tag}`);
+
+  const servers: Collection<string, Guild> = client.guilds.cache;
+
+
+  servers.forEach((s: Guild) => {
+    const cat = s.channels.cache.filter(
+        (c) => c.type === 'GUILD_CATEGORY' && c.name.startsWith('📷')
+    );
+
+    cat.forEach((c ) => {
+      (c as CategoryChannel).children.forEach((child) => {
+        if (child.type === 'GUILD_VOICE') {
+          const i = cameraChannelsList.findIndex((server) => s.id === server.serverId);
+          const serverChan = cameraChannelsList[i] ?? {serverId: s.id, channelIds: []};
+
+          if (i === -1) cameraChannelsList.push(serverChan);
+          else cameraChannelsList[i] = serverChan;
+
+          cameraChannelsList.find((c) => c.serverId === s.id)?.channelIds.push(child.id);
+        }
+      });
+    });
+  });
+});
 
 client.login(process.env.DISCORD_TOKEN);
